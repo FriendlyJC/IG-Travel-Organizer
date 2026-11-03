@@ -35,28 +35,44 @@ export async function POST(req: NextRequest) {
 }
 
 async function callGemini(apiKey: string, prompt: string) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.1,     // 低溫度，讓輸出穩定
-        maxOutputTokens: 4096,
-      },
-    }),
-  });
+  // 優先使用最新的 gemini-3.8-flash，並提供自動備援
+  const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+  let lastError = '';
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    const msg = err?.error?.message ?? res.statusText;
-    return NextResponse.json({ error: `Gemini API 錯誤: ${msg}` }, { status: res.status });
+  for (const model of models) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.1,     // 低溫度，讓輸出穩定
+            maxOutputTokens: 4096,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+        return NextResponse.json({ text });
+      }
+
+      const err = await res.json().catch(() => ({}));
+      lastError = err?.error?.message ?? res.statusText;
+
+      // 若是 API Key 無效或配額問題，直接中斷回報錯誤
+      if (res.status === 400 && !lastError.includes('no longer available') && !lastError.includes('not found')) {
+        break;
+      }
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+    }
   }
 
-  const data = await res.json();
-  const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-  return NextResponse.json({ text });
+  return NextResponse.json({ error: `Gemini API 錯誤: ${lastError}` }, { status: 400 });
 }
 
 async function callOpenAI(apiKey: string, prompt: string) {
