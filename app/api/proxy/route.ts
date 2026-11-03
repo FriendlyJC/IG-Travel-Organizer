@@ -10,10 +10,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '無效的請求內容' }, { status: 400 });
   }
 
-  const { provider, apiKey, prompt } = body as {
+  const { provider, apiKey, prompt, model } = body as {
     provider: 'gemini' | 'openai';
     apiKey: string;
     prompt: string;
+    model?: string;
   };
 
   if (!provider || !apiKey || !prompt) {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   try {
     if (provider === 'gemini') {
-      return await callGemini(apiKey, prompt);
+      return await callGemini(apiKey, prompt, model);
     } else if (provider === 'openai') {
       return await callOpenAI(apiKey, prompt);
     } else {
@@ -34,13 +35,74 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function callGemini(apiKey: string, prompt: string) {
-  // 優先使用最新的 gemini-3.8-flash，並提供自動備援
-  const models = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+let cachedGeminiModel: string | null = null;
+
+async function getAvailableGeminiModels(apiKey: string): Promise<string[]> {
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const msg = err?.error?.message ?? res.statusText;
+      throw new Error(`無法獲取可用模型列表: ${msg}`);
+    }
+    const data = await res.json();
+    const models: Array<{ name: string; supportedGenerationMethods?: string[] }> = data.models || [];
+
+    // 篩選支援 generateContent 的模型
+    const supported = models
+      .filter((m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent'))
+      .map((m) => m.name);
+
+    // 優先順序：含 flash 的模型優先排序，其次其他 gemini 模型
+    const flashModels = supported.filter((name) => name.toLowerCase().includes('flash'));
+    const otherModels = supported.filter((name) => !name.toLowerCase().includes('flash'));
+
+    return [...flashModels, ...otherModels];
+  } catch (e) {
+    console.warn('動態獲取 Gemini 模型列表失敗:', e);
+    return [];
+  }
+}
+
+async function callGemini(apiKey: string, prompt: string, requestedModel?: string) {
+  // 若有指定 model，優先使用
+  let candidateModels: string[] = [];
+  if (requestedModel) {
+    candidateModels.push(requestedModel);
+  }
+
+  // 若快取中已有驗證過可用的 model，排在最前
+  if (cachedGeminiModel && !candidateModels.includes(cachedGeminiModel)) {
+    candidateModels.push(cachedGeminiModel);
+  }
+
+  // 動態獲取該 API Key 目前帳戶支援的所有模型
+  const available = await getAvailableGeminiModels(apiKey);
+  for (const m of available) {
+    if (!candidateModels.includes(m)) {
+      candidateModels.push(m);
+    }
+  }
+
+  // 萬一 ListModels 失敗的保底靜態列表
+  const fallbackDefaults = [
+    'models/gemini-2.5-flash',
+    'models/gemini-2.0-flash',
+    'models/gemini-1.5-flash',
+    'models/gemini-pro',
+  ];
+  for (const fb of fallbackDefaults) {
+    if (!candidateModels.includes(fb)) {
+      candidateModels.push(fb);
+    }
+  }
+
   let lastError = '';
 
-  for (const model of models) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  for (const rawModel of candidateModels) {
+    const modelPath = rawModel.startsWith('models/') ? rawModel : `models/${rawModel}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${apiKey}`;
+
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -55,24 +117,26 @@ async function callGemini(apiKey: string, prompt: string) {
       });
 
       if (res.ok) {
+        // 成功！記住這個能正常運作的模型
+        cachedGeminiModel = modelPath;
         const data = await res.json();
         const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-        return NextResponse.json({ text });
+        return NextResponse.json({ text, model: modelPath });
       }
 
       const err = await res.json().catch(() => ({}));
       lastError = err?.error?.message ?? res.statusText;
 
-      // 若是 API Key 無效或配額問題，直接中斷回報錯誤
-      if (res.status === 400 && !lastError.includes('no longer available') && !lastError.includes('not found')) {
-        break;
+      // 若是 API Key 本身無效，就不用繼續換模型試了，直接中斷
+      if (lastError.toLowerCase().includes('api key not valid') || lastError.toLowerCase().includes('api_key_invalid')) {
+        return NextResponse.json({ error: `API Key 無效，請檢查輸入的 Gemini API Key。` }, { status: 400 });
       }
     } catch (e) {
       lastError = e instanceof Error ? e.message : String(e);
     }
   }
 
-  return NextResponse.json({ error: `Gemini API 錯誤: ${lastError}` }, { status: 400 });
+  return NextResponse.json({ error: `Gemini API 呼叫失敗: ${lastError}` }, { status: 400 });
 }
 
 async function callOpenAI(apiKey: string, prompt: string) {
