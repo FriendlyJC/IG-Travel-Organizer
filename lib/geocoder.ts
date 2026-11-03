@@ -52,6 +52,10 @@ async function googleGeocodeSearch(
       return result;
     }
 
+    if (data.status && data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      console.error(`[Google Geocoding 錯誤] 查詢: "${query}" -> 狀態: ${data.status}, 原因: ${data.errorMessage}`);
+    }
+
     googleCache.set(cacheKey, null);
     return null;
   } catch (e) {

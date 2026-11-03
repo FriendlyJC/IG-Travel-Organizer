@@ -17,6 +17,10 @@ interface Props {
 export default function ApiKeyInput({ provider, apiKey, googleApiKey, onChange }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [showGoogleKey, setShowGoogleKey] = useState(false);
+  const [testState, setTestState] = useState<{
+    status: 'idle' | 'testing' | 'success' | 'error';
+    message?: string;
+  }>({ status: 'idle' });
 
   // 從 localStorage 還原上次使用的設定
   useEffect(() => {
@@ -40,6 +44,52 @@ export default function ApiKeyInput({ provider, apiKey, googleApiKey, onChange }
   function handleGoogleKeyChange(newGoogleKey: string) {
     onChange(provider, apiKey, newGoogleKey);
     saveSettings(provider, apiKey, newGoogleKey);
+    setTestState({ status: 'idle' });
+  }
+
+  async function testGoogleKey() {
+    if (!googleApiKey.trim()) {
+      setTestState({ status: 'error', message: '請先輸入 Google Geocoding API Key' });
+      return;
+    }
+
+    setTestState({ status: 'testing', message: '正在向 Google 查詢測試地標...' });
+
+    try {
+      const res = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'google-geocode',
+          apiKey: googleApiKey.trim(),
+          address: 'Taipei 101, Taiwan',
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.found) {
+        setTestState({
+          status: 'success',
+          message: `連線成功！成功解析「${data.formattedAddress || 'Taipei 101'}」(${data.lat.toFixed(4)}, ${data.lng.toFixed(4)})`,
+        });
+      } else {
+        const errDetail = data.errorMessage || data.status || '未知錯誤';
+        let tip = '';
+        if (data.status === 'REQUEST_DENIED') {
+          tip = '（常見原因：Google Cloud 未啟用「Geocoding API」、或 API Key 設有限制、或尚未綁定帳單）';
+        }
+        setTestState({
+          status: 'error',
+          message: `Google 拒絕連線 [${data.status || '錯誤'}]: ${errDetail} ${tip}`,
+        });
+      }
+    } catch (e) {
+      setTestState({
+        status: 'error',
+        message: `請求失敗: ${e instanceof Error ? e.message : String(e)}`,
+      });
+    }
   }
 
   function saveSettings(p: LLMProvider, k: string, gk: string) {
@@ -120,22 +170,47 @@ export default function ApiKeyInput({ provider, apiKey, googleApiKey, onChange }
           </label>
         </div>
 
-        <div className="relative">
-          <input
-            type={showGoogleKey ? 'text' : 'password'}
-            placeholder="AIzaSy... (Google Cloud Geocoding API Key)"
-            value={googleApiKey}
-            onChange={(e) => handleGoogleKeyChange(e.target.value)}
-            className="w-full px-4 py-2.5 pr-20 rounded-lg border border-gray-200 focus:outline-none focus:border-amber-400 text-sm font-mono"
-          />
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type={showGoogleKey ? 'text' : 'password'}
+              placeholder="AIzaSy... (Google Cloud Geocoding API Key)"
+              value={googleApiKey}
+              onChange={(e) => handleGoogleKeyChange(e.target.value)}
+              className="w-full px-4 py-2.5 pr-20 rounded-lg border border-gray-200 focus:outline-none focus:border-amber-400 text-sm font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => setShowGoogleKey((v) => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600"
+            >
+              {showGoogleKey ? '隱藏' : '顯示'}
+            </button>
+          </div>
+
           <button
             type="button"
-            onClick={() => setShowGoogleKey((v) => !v)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600"
+            onClick={testGoogleKey}
+            disabled={testState.status === 'testing' || !googleApiKey.trim()}
+            className="px-3.5 py-2.5 bg-amber-50 hover:bg-amber-100 disabled:bg-gray-100 text-amber-800 disabled:text-gray-400 border border-amber-200 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors"
           >
-            {showGoogleKey ? '隱藏' : '顯示'}
+            {testState.status === 'testing' ? '連線中...' : '🔍 測試此 Key'}
           </button>
         </div>
+
+        {/* 測試結果反饋 */}
+        {testState.status === 'success' && (
+          <div className="p-2.5 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700 flex items-start gap-1.5">
+            <span className="font-bold">✅</span>
+            <span>{testState.message}</span>
+          </div>
+        )}
+        {testState.status === 'error' && (
+          <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 flex items-start gap-1.5 leading-relaxed">
+            <span className="font-bold">❌</span>
+            <span>{testState.message}</span>
+          </div>
+        )}
 
         {/* 橘色提示字 */}
         <p className="text-xs text-amber-600 font-medium flex items-center gap-1">

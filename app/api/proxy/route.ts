@@ -43,18 +43,36 @@ export async function POST(req: NextRequest) {
 
 async function callGoogleGeocode(apiKey: string, address: string) {
   const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    return NextResponse.json({ error: `Google Geocoding HTTP 錯誤: ${res.statusText}` }, { status: res.status });
-  }
-  const data = await res.json();
-  if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
-    const loc = data.results[0].geometry?.location;
-    if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
-      return NextResponse.json({ lat: loc.lat, lng: loc.lng, found: true });
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      return NextResponse.json({ error: `Google Geocoding HTTP 錯誤: ${res.statusText}` }, { status: res.status });
     }
+    const data = await res.json();
+    console.log(`[Google Geocode] 查詢: "${address}" -> 狀態: ${data.status} ${data.error_message ? `(原因: ${data.error_message})` : ''}`);
+
+    if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+      const loc = data.results[0].geometry?.location;
+      if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+        return NextResponse.json({
+          found: true,
+          lat: loc.lat,
+          lng: loc.lng,
+          formattedAddress: data.results[0].formatted_address,
+          status: 'OK',
+        });
+      }
+    }
+
+    return NextResponse.json({
+      found: false,
+      status: data.status,
+      errorMessage: data.error_message || (data.status === 'ZERO_RESULTS' ? '查無結果' : data.status),
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: `連線失敗: ${msg}` }, { status: 500 });
   }
-  return NextResponse.json({ found: false, status: data.status });
 }
 
 let cachedGeminiModel: string | null = null;
