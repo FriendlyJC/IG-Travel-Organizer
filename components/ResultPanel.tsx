@@ -1,7 +1,7 @@
 'use client';
 
 // ============================================================
-// components/ResultPanel.tsx — 分析完成後的結果面板
+// components/ResultPanel.tsx — 分析完成後的結果面板（含座標顏色說明）
 // ============================================================
 
 import { MergedSpot, NotFoundResult } from '@/lib/types';
@@ -24,6 +24,13 @@ export default function ResultPanel({
   // 依國家統計
   const countryStats = mergedSpots.reduce<Record<string, number>>((acc, spot) => {
     acc[spot.country] = (acc[spot.country] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  // 依座標來源統計
+  const sourceStats = mergedSpots.reduce<Record<string, number>>((acc, spot) => {
+    const src = spot.coordSource || 'ai';
+    acc[src] = (acc[src] ?? 0) + 1;
     return acc;
   }, {});
 
@@ -60,6 +67,36 @@ export default function ResultPanel({
         </div>
       </div>
 
+      {/* 座標精度統計與顏色標籤說明 */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 space-y-2.5">
+        <p className="text-sm font-semibold text-gray-700">📍 Google Earth 座標顏色標籤說明</p>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="bg-green-50 border border-green-200 rounded-lg p-2.5">
+            <div className="font-bold text-green-700 flex items-center gap-1">
+              <span>🟢 綠色圖釘</span>
+            </div>
+            <p className="text-green-800 text-[11px] mt-1 font-medium">Google Geocoding</p>
+            <p className="text-green-600 text-[11px] mt-0.5">精確定位：{sourceStats['google'] || 0} 個</p>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+            <div className="font-bold text-amber-700 flex items-center gap-1">
+              <span>🟡 黃色圖釘</span>
+            </div>
+            <p className="text-amber-800 text-[11px] mt-1 font-medium">OpenStreetMap</p>
+            <p className="text-amber-600 text-[11px] mt-0.5">地圖查得：{sourceStats['nominatim'] || 0} 個</p>
+          </div>
+
+          <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
+            <div className="font-bold text-red-700 flex items-center gap-1">
+              <span>🔴 紅色圖釘</span>
+            </div>
+            <p className="text-red-800 text-[11px] mt-1 font-medium">AI 預估位置</p>
+            <p className="text-red-600 text-[11px] mt-0.5">推測座標：{sourceStats['ai'] || 0} 個</p>
+          </div>
+        </div>
+      </div>
+
       {/* 國家統計 */}
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
         <p className="text-sm font-medium text-gray-600 mb-3">📊 景點分布</p>
@@ -83,7 +120,7 @@ export default function ResultPanel({
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={onDownloadKml}
-          className="flex flex-col items-center gap-1.5 py-4 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+          className="flex flex-col items-center gap-1.5 py-4 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-sm hover:shadow"
         >
           <span className="text-xl">📥</span>
           <span className="font-semibold text-sm">下載 KML 檔案</span>
@@ -92,7 +129,7 @@ export default function ResultPanel({
         <button
           onClick={onDownloadCsv}
           disabled={notFound.length === 0}
-          className="flex flex-col items-center gap-1.5 py-4 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-xl transition-colors"
+          className="flex flex-col items-center gap-1.5 py-4 px-3 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-xl transition-colors shadow-sm hover:shadow"
         >
           <span className="text-xl">📋</span>
           <span className="font-semibold text-sm">下載找不到清單</span>
@@ -109,10 +146,9 @@ export default function ResultPanel({
           <li>開啟 <a href="https://earth.google.com" target="_blank" rel="noopener noreferrer" className="underline">Google Earth Web</a> 或 Google Earth Pro</li>
           <li>點選左側「專案」→「從電腦匯入 KML 檔案」</li>
           <li>選取下載的 <code className="bg-blue-100 px-1 rounded">{collectionName}_spots.kml</code></li>
-          <li>地圖上即可看到所有景點，依國家分資料夾！</li>
+          <li>地圖上即可看到所有景點，標籤會依照精確度顯示綠、黃、紅圖釘！</li>
         </ol>
       </div>
     </div>
   );
 }
-

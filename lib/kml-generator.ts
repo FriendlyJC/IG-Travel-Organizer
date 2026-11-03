@@ -1,5 +1,8 @@
 // ============================================================
-// kml-generator.ts — 將景點資料轉為 KML 格式
+// kml-generator.ts — 將景點資料轉為 KML 格式（含色彩標記）
+// 綠色：Google Maps Geocoding 確定精確
+// 黃色：OpenStreetMap Nominatim 查得
+// 紅色：AI 預估座標
 // ============================================================
 
 import { SpotResult, MergedSpot } from './types';
@@ -31,6 +34,7 @@ export function mergeSpots(spots: SpotResult[]): MergedSpot[] {
         description: spot.description,
         lat: spot.lat,
         lng: spot.lng,
+        coordSource: spot.coordSource || 'ai',
         posts: [spot.post],
       });
     }
@@ -51,7 +55,7 @@ function escapeXml(str: string): string {
     .replace(/'/g, '&apos;');
 }
 
-/** 取得國家對應的 emoji flag（依 ISO 2-letter code） */
+/** 取得國家對應的 emoji flag */
 const COUNTRY_FLAGS: Record<string, string> = {
   vietnam: '🇻🇳', thailand: '🇹🇭', japan: '🇯🇵', taiwan: '🇹🇼',
   china: '🇨🇳', cambodia: '🇰🇭', netherlands: '🇳🇱', usa: '🇺🇸',
@@ -80,6 +84,15 @@ function placemarkKml(spot: MergedSpot): string {
   const name = spot.spotName || spot.spotNameEn || `${spot.city} Spot`;
   const nameEn = spot.spotNameEn ? ` / ${spot.spotNameEn}` : '';
 
+  const sourceBadge =
+    spot.coordSource === 'google'
+      ? '🟢 座標來源：Google Geocoding (精確定位)'
+      : spot.coordSource === 'nominatim'
+      ? '🟡 座標來源：OpenStreetMap Nominatim'
+      : '🔴 座標來源：AI 預估位置 (可能存在偏移)';
+
+  const styleId = `${spot.coordSource || 'ai'}-pin`;
+
   // 建立 HTML description（Google Earth 支援 CDATA 內的 HTML）
   const postLinks = spot.posts
     .map((p, i) => `<a href="${escapeXml(p.url)}">📸 相關貼文 ${i + 1}</a>`)
@@ -88,6 +101,7 @@ function placemarkKml(spot: MergedSpot): string {
   const description = `
 <b>${escapeXml(name)}${escapeXml(nameEn)}</b><br/>
 📍 ${escapeXml(spot.city)}, ${escapeXml(spot.country)}<br/>
+🎯 ${sourceBadge}<br/>
 📝 ${escapeXml(spot.description)}<br/>
 <hr/>
 <b>相關 IG 貼文：</b><br/>
@@ -97,6 +111,7 @@ ${postLinks}
   return `
       <Placemark>
         <name>${escapeXml(name)}</name>
+        <styleUrl>#${styleId}</styleUrl>
         <description><![CDATA[${description}]]></description>
         <Point>
           <coordinates>${spot.lng},${spot.lat},0</coordinates>
@@ -118,7 +133,7 @@ function groupByCountry(spots: MergedSpot[]): Map<string, MergedSpot[]> {
 
 /**
  * 將合併後的景點列表轉為 KML 字串。
- * 結構：Document → Folder（國家）→ Placemark（景點）
+ * 結構：Document → Styles (綠/黃/紅) → Folder（國家）→ Placemark（景點）
  */
 export function generateKml(mergedSpots: MergedSpot[], collectionName: string): string {
   const grouped = groupByCountry(mergedSpots);
@@ -144,6 +159,37 @@ export function generateKml(mergedSpots: MergedSpot[], collectionName: string): 
   <Document>
     <name>IG ${escapeXml(collectionName)} Travel Spots</name>
     <description>由 IG Travel Organizer 自動生成於 ${now}｜共 ${totalSpots} 個景點，涵蓋 ${totalCountries} 個國家</description>
+
+    <!-- 🟢 綠色樣式：Google Maps Geocoding 確定精確 -->
+    <Style id="google-pin">
+      <IconStyle>
+        <scale>1.1</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
+
+    <!-- 🟡 黃色樣式：OpenStreetMap Nominatim 找到 -->
+    <Style id="nominatim-pin">
+      <IconStyle>
+        <scale>1.1</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
+
+    <!-- 🔴 紅色樣式：AI 預估輸出 -->
+    <Style id="ai-pin">
+      <IconStyle>
+        <scale>1.1</scale>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/pushpin/red-pushpin.png</href>
+        </Icon>
+      </IconStyle>
+    </Style>
+
     ${folders}
   </Document>
 </kml>`;
@@ -161,4 +207,3 @@ export function downloadKml(kmlContent: string, filename = 'travel_spots.kml') {
   a.click();
   URL.revokeObjectURL(url);
 }
-

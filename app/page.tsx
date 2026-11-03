@@ -44,6 +44,7 @@ export default function Home() {
   // 設定
   const [provider, setProvider] = useState<LLMProvider>('gemini');
   const [apiKey, setApiKey] = useState('');
+  const [googleApiKey, setGoogleApiKey] = useState('');
 
   // 檔案 & 解析
   const [collectionsJson, setCollectionsJson] = useState<string | null>(null);
@@ -80,9 +81,10 @@ export default function Home() {
   );
 
   // ── API Key 變更 ─────────────────────────────────────────────
-  const handleApiKeyChange = (p: LLMProvider, k: string) => {
+  const handleApiKeyChange = (p: LLMProvider, k: string, gk: string) => {
     setProvider(p);
     setApiKey(k);
+    setGoogleApiKey(gk);
   };
 
   // ── 驗證是否可以開始 ─────────────────────────────────────────
@@ -163,6 +165,7 @@ export default function Home() {
 
       let geocoded = 0;
       const geocodedSpots = await geocodeSpots(rawSpots, {
+        googleApiKey,
         onProgress: (done, total) => {
           geocoded = done;
           setProgress((prev) => ({ ...prev, geocodedCount: done }));
@@ -223,10 +226,11 @@ export default function Home() {
         </div>
 
         {/* Step 1: API Key */}
-        <Section step="1" title="設定 AI 模型">
+        <Section step="1" title="設定 API 金鑰">
           <ApiKeyInput
             provider={provider}
             apiKey={apiKey}
+            googleApiKey={googleApiKey}
             onChange={handleApiKeyChange}
           />
         </Section>

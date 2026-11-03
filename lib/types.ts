@@ -20,6 +20,8 @@ export interface IGCollection {
   posts: IGPost[];
 }
 
+export type CoordSource = 'google' | 'nominatim' | 'ai';
+
 /** LLM 成功辨識到景點的結果 */
 export interface SpotResult {
   postIndex: number;
@@ -31,10 +33,15 @@ export interface SpotResult {
   description: string;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
-  // Geocoding 結果（後填）
+  // AI 初始推測座標（作為備援）
+  aiLat?: number;
+  aiLng?: number;
+  // 最終採用的經緯度
   lat?: number;
   lng?: number;
   geocoded?: boolean;
+  // 座標來源：google (綠) | nominatim (黃) | ai (紅)
+  coordSource?: CoordSource;
 }
 
 /** LLM 找不到景點的結果 */
@@ -79,6 +86,7 @@ export interface MergedSpot {
   description: string;
   lat: number;
   lng: number;
+  coordSource: CoordSource;
   posts: IGPost[];  // 所有相關貼文
 }
 
@@ -89,6 +97,7 @@ export type LLMProvider = 'gemini' | 'openai';
 export interface AppSettings {
   provider: LLMProvider;
   apiKey: string;
+  googleApiKey?: string;
   collectionName: string;
 }
 

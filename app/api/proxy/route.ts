@@ -10,29 +10,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '無效的請求內容' }, { status: 400 });
   }
 
-  const { provider, apiKey, prompt, model } = body as {
-    provider: 'gemini' | 'openai';
+  const { provider, apiKey, prompt, model, address } = body as {
+    provider: 'gemini' | 'openai' | 'google-geocode';
     apiKey: string;
-    prompt: string;
+    prompt?: string;
     model?: string;
+    address?: string;
   };
 
-  if (!provider || !apiKey || !prompt) {
+  if (!provider || !apiKey) {
     return NextResponse.json({ error: '缺少必要參數' }, { status: 400 });
   }
 
   try {
-    if (provider === 'gemini') {
+    if (provider === 'google-geocode') {
+      if (!address) return NextResponse.json({ error: '缺少 address 參數' }, { status: 400 });
+      return await callGoogleGeocode(apiKey, address);
+    } else if (provider === 'gemini') {
+      if (!prompt) return NextResponse.json({ error: '缺少 prompt 參數' }, { status: 400 });
       return await callGemini(apiKey, prompt, model);
     } else if (provider === 'openai') {
+      if (!prompt) return NextResponse.json({ error: '缺少 prompt 參數' }, { status: 400 });
       return await callOpenAI(apiKey, prompt);
     } else {
-      return NextResponse.json({ error: '不支援的 LLM provider' }, { status: 400 });
+      return NextResponse.json({ error: '不支援的 provider' }, { status: 400 });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+}
+
+async function callGoogleGeocode(apiKey: string, address: string) {
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    return NextResponse.json({ error: `Google Geocoding HTTP 錯誤: ${res.statusText}` }, { status: res.status });
+  }
+  const data = await res.json();
+  if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
+    const loc = data.results[0].geometry?.location;
+    if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
+      return NextResponse.json({ lat: loc.lat, lng: loc.lng, found: true });
+    }
+  }
+  return NextResponse.json({ found: false, status: data.status });
 }
 
 let cachedGeminiModel: string | null = null;

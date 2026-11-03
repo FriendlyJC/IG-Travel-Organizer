@@ -219,9 +219,12 @@ export async function classifyPosts(
           description: result.description ?? '',
           confidence: result.confidence ?? 'low',
           reason: result.reason,
-          lat: validCoords ? latNum : undefined,
-          lng: validCoords ? lngNum : undefined,
-          geocoded: validCoords,
+          aiLat: validCoords ? latNum : undefined,
+          aiLng: validCoords ? lngNum : undefined,
+          // 座標與來源將由 geocoder 依照優先順序解析
+          lat: undefined,
+          lng: undefined,
+          geocoded: false,
         });
       } else {
         notFound.push({
