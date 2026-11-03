@@ -102,6 +102,14 @@ export async function geocodeSpots(
 
   for (let i = 0; i < spots.length; i++) {
     const spot = spots[i];
+
+    // 若 LLM 已經提供有效座標，直接使用，無須向 Nominatim 發出請求
+    if (spot.geocoded && spot.lat !== undefined && spot.lng !== undefined) {
+      result.push(spot);
+      onProgress?.(i + 1, spots.length);
+      continue;
+    }
+
     const key = `${spot.country}|${spot.city}|${spot.spotName}`.toLowerCase();
 
     let coords: { lat: number; lng: number } | null = null;

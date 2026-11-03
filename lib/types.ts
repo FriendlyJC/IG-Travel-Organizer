@@ -52,6 +52,8 @@ export interface LLMPostResult {
   city?: string;
   spot_name?: string;
   spot_name_en?: string;
+  latitude?: number;
+  longitude?: number;
   description?: string;
   confidence?: 'high' | 'medium' | 'low';
   reason: string;

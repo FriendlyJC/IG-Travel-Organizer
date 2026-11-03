@@ -38,6 +38,8 @@ Hashtags: ${hashtags}
   "city": "<城市英文名，例如 Da Lat>",
   "spot_name": "<當地語言的景點/店家名稱>",
   "spot_name_en": "<景點英文名稱>",
+  "latitude": <景點或城市的大致緯度浮點數，例如 11.9404>,
+  "longitude": <景點或城市的大致經度浮點數，例如 108.4583>,
   "description": "<50字以內的景點簡述>",
   "confidence": "<high|medium|low>",
   "reason": "<判斷依據，一句話>"
@@ -52,6 +54,7 @@ Hashtags: ${hashtags}
 
 重要規則：
 - 回覆必須是純 JSON 陣列，不得包含任何 markdown 格式或額外說明文字
+- 請務必提供該景點或城市的大致經緯度 (latitude, longitude)，精確到小數點後 3~4 位即可
 - 每篇貼文都必須有對應的結果
 - 語言判斷：越南文 → Vietnam、泰文 → Thailand、日文 → Japan、繁體中文且提及台灣地名 → Taiwan
 - 若發布者連結包含 Google Maps 連結，這是非常可靠的地點線索
@@ -102,7 +105,12 @@ async function callOpenAI(prompt: string, apiKey: string): Promise<LLMPostResult
 
 function parseResults(text: string): LLMPostResult[] {
   // 嘗試從回應文字中提取 JSON 陣列
-  const cleaned = text.trim();
+  let cleaned = text.trim();
+
+  // 去除 markdown code block 如 ```json 和 ```
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```[a-zA-Z]*\n?/, '').replace(/\n?```$/, '').trim();
+  }
 
   // 找到 [ ... ] 的部分
   const start = cleaned.indexOf('[');
@@ -111,7 +119,10 @@ function parseResults(text: string): LLMPostResult[] {
     throw new Error(`LLM 回傳格式異常，無法找到 JSON 陣列：${cleaned.substring(0, 200)}`);
   }
 
-  const jsonStr = cleaned.substring(start, end + 1);
+  let jsonStr = cleaned.substring(start, end + 1);
+  // 修復常見的 trailing commas 語法問題
+  jsonStr = jsonStr.replace(/,\s*([\]}])/g, '$1');
+
   try {
     const parsed = JSON.parse(jsonStr);
     if (!Array.isArray(parsed)) throw new Error('回傳非陣列格式');
@@ -194,6 +205,10 @@ export async function classifyPosts(
       const post = posts[postIndex];
 
       if (result.found) {
+        const latNum = typeof result.latitude === 'number' ? result.latitude : parseFloat(String(result.latitude));
+        const lngNum = typeof result.longitude === 'number' ? result.longitude : parseFloat(String(result.longitude));
+        const validCoords = !isNaN(latNum) && !isNaN(lngNum) && latNum >= -90 && latNum <= 90 && lngNum >= -180 && lngNum <= 180;
+
         spots.push({
           postIndex,
           post,
@@ -204,6 +219,9 @@ export async function classifyPosts(
           description: result.description ?? '',
           confidence: result.confidence ?? 'low',
           reason: result.reason,
+          lat: validCoords ? latNum : undefined,
+          lng: validCoords ? lngNum : undefined,
+          geocoded: validCoords,
         });
       } else {
         notFound.push({

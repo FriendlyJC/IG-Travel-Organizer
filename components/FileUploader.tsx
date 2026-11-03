@@ -62,7 +62,8 @@ export default function FileUploader({ onFilesLoaded }: Props) {
     const newStatus = { ...status, error: undefined };
 
     for (const file of jsonFiles) {
-      if (file.name.includes('saved_collections')) {
+      const lowerName = file.name.toLowerCase();
+      if (lowerName.includes('collection')) {
         newStatus.collections = 'loading';
         setStatus({ ...newStatus });
         try {
@@ -73,7 +74,7 @@ export default function FileUploader({ onFilesLoaded }: Props) {
         } catch {
           newStatus.collections = 'error';
         }
-      } else if (file.name.includes('saved_posts')) {
+      } else if (lowerName.includes('post')) {
         newStatus.posts = 'loading';
         setStatus({ ...newStatus });
         try {
@@ -83,6 +84,24 @@ export default function FileUploader({ onFilesLoaded }: Props) {
           newStatus.postsSize = formatSize(file.size);
         } catch {
           newStatus.posts = 'error';
+        }
+      } else {
+        // 未匹配檔名時，讀取內容判斷
+        try {
+          const content = await readFileAsText(file);
+          if (content.includes('label_values')) {
+            newFiles.collectionsJson = content;
+            newStatus.collections = 'ok';
+            newStatus.collectionsName = file.name;
+            newStatus.collectionsSize = formatSize(file.size);
+          } else {
+            newFiles.postsJson = content;
+            newStatus.posts = 'ok';
+            newStatus.postsName = file.name;
+            newStatus.postsSize = formatSize(file.size);
+          }
+        } catch {
+          newStatus.collections = 'error';
         }
       }
     }
