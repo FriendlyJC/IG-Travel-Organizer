@@ -1,7 +1,7 @@
 'use client';
 
 // ============================================================
-// components/FileUploader.tsx — 雙 JSON 上傳元件
+// components/FileUploader.tsx — 可愛友善風格 JSON 上傳元件 (精簡單檔 saved_collections)
 // ============================================================
 
 import { useState, useCallback } from 'react';
@@ -13,16 +13,6 @@ interface UploadedFiles {
 
 interface Props {
   onFilesLoaded: (files: UploadedFiles) => void;
-}
-
-interface FileStatus {
-  collections: 'idle' | 'loading' | 'ok' | 'error';
-  posts: 'idle' | 'loading' | 'ok' | 'error';
-  collectionsName?: string;
-  postsName?: string;
-  collectionsSize?: string;
-  postsSize?: string;
-  error?: string;
 }
 
 function formatSize(bytes: number): string {
@@ -41,152 +31,95 @@ function readFileAsText(file: File): Promise<string> {
 }
 
 export default function FileUploader({ onFilesLoaded }: Props) {
-  const [status, setStatus] = useState<FileStatus>({
-    collections: 'idle',
-    posts: 'idle',
-  });
-  const [files, setFiles] = useState<UploadedFiles>({
-    collectionsJson: null,
-    postsJson: null,
-  });
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileSize, setFileSize] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const processFiles = useCallback(async (fileList: File[]) => {
-    const jsonFiles = fileList.filter((f) => f.name.endsWith('.json'));
-    if (jsonFiles.length === 0) {
-      setStatus((s) => ({ ...s, error: '請上傳 .json 格式的檔案' }));
+  const processFile = useCallback(async (file: File) => {
+    setErrorMsg(null);
+    if (!file.name.endsWith('.json')) {
+      setErrorMsg('請上傳 .json 格式的檔案（例如 saved_collections.json）');
       return;
     }
 
-    const newFiles = { ...files };
-    const newStatus = { ...status, error: undefined };
-
-    for (const file of jsonFiles) {
-      const lowerName = file.name.toLowerCase();
-      if (lowerName.includes('collection')) {
-        newStatus.collections = 'loading';
-        setStatus({ ...newStatus });
-        try {
-          newFiles.collectionsJson = await readFileAsText(file);
-          newStatus.collections = 'ok';
-          newStatus.collectionsName = file.name;
-          newStatus.collectionsSize = formatSize(file.size);
-        } catch {
-          newStatus.collections = 'error';
-        }
-      } else if (lowerName.includes('post')) {
-        newStatus.posts = 'loading';
-        setStatus({ ...newStatus });
-        try {
-          newFiles.postsJson = await readFileAsText(file);
-          newStatus.posts = 'ok';
-          newStatus.postsName = file.name;
-          newStatus.postsSize = formatSize(file.size);
-        } catch {
-          newStatus.posts = 'error';
-        }
-      } else {
-        // 未匹配檔名時，讀取內容判斷
-        try {
-          const content = await readFileAsText(file);
-          if (content.includes('label_values')) {
-            newFiles.collectionsJson = content;
-            newStatus.collections = 'ok';
-            newStatus.collectionsName = file.name;
-            newStatus.collectionsSize = formatSize(file.size);
-          } else {
-            newFiles.postsJson = content;
-            newStatus.posts = 'ok';
-            newStatus.postsName = file.name;
-            newStatus.postsSize = formatSize(file.size);
-          }
-        } catch {
-          newStatus.collections = 'error';
-        }
-      }
+    try {
+      const text = await readFileAsText(file);
+      setFileName(file.name);
+      setFileSize(formatSize(file.size));
+      setIsSuccess(true);
+      onFilesLoaded({ collectionsJson: text, postsJson: null });
+    } catch {
+      setErrorMsg('檔案讀取失敗，請確認檔案格式是否正確');
     }
-
-    setStatus(newStatus);
-    setFiles(newFiles);
-
-    // 兩個檔案都上傳完成後通知父元件
-    if (newFiles.collectionsJson && newFiles.postsJson) {
-      onFilesLoaded(newFiles);
-    } else if (newFiles.collectionsJson && !newFiles.postsJson) {
-      // 只有 collections 也可以繼續（posts 為輔助）
-      onFilesLoaded(newFiles);
-    }
-  }, [files, status, onFilesLoaded]);
+  }, [onFilesLoaded]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const fileList = Array.from(e.dataTransfer.files);
-    processFiles(fileList);
-  }, [processFiles]);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  }, [processFile]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = Array.from(e.target.files ?? []);
-    processFiles(fileList);
-  }, [processFiles]);
-
-  const statusIcon = (s: 'idle' | 'loading' | 'ok' | 'error') => {
-    if (s === 'ok') return <span className="text-green-500">✅</span>;
-    if (s === 'error') return <span className="text-red-500">❌</span>;
-    if (s === 'loading') return <span className="animate-spin">⏳</span>;
-    return <span className="text-gray-300">⭕</span>;
-  };
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+  }, [processFile]);
 
   return (
-    <div className="space-y-3">
-      {/* 拖放區域 */}
+    <div className="space-y-2.5">
+      {/* 拖放上傳按鈕區域 */}
       <div
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
-        className={`border-2 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
+        onClick={() => document.getElementById('single-file-input')?.click()}
+        className={`group relative border-2 border-dashed rounded-2xl py-3.5 px-4 text-center transition-all cursor-pointer select-none ${
           isDragging
-            ? 'border-blue-400 bg-blue-50'
-            : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+            ? 'border-amber-500 bg-amber-50 scale-[1.01]'
+            : isSuccess
+            ? 'border-emerald-400 bg-emerald-50/70'
+            : 'border-amber-200/90 hover:border-amber-400 bg-amber-50/40 hover:bg-amber-50/80 shadow-xs'
         }`}
-        onClick={() => document.getElementById('file-input')?.click()}
       >
         <input
-          id="file-input"
+          id="single-file-input"
           type="file"
-          multiple
           accept=".json"
           className="hidden"
           onChange={handleInputChange}
         />
-        <p className="text-3xl mb-2">📁</p>
-        <p className="text-sm text-gray-600 font-medium">拖放或點擊上傳 JSON 檔案</p>
-        <p className="text-xs text-gray-400 mt-1">支援同時選取多個檔案</p>
+
+        {isSuccess ? (
+          <div className="flex flex-col items-center justify-center space-y-1">
+            <span className="text-2xl animate-bounce">🎉</span>
+            <p className="text-xs sm:text-sm font-bold text-emerald-800">
+              已成功載入 {fileName}
+            </p>
+            <p className="text-[11px] text-emerald-600 font-mono">
+              檔案大小：{fileSize}（點擊可重新更換檔案）
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center space-y-1">
+            <span className="text-2xl group-hover:scale-110 transition-transform">📂</span>
+            <p className="text-xs sm:text-sm font-bold text-stone-800">
+              點擊或拖放上傳 <span className="text-amber-700 underline font-mono">saved_collections.json</span>
+            </p>
+            <p className="text-[11px] text-stone-500">
+              僅需這一個檔案即可自動分析整理！
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* 檔案狀態 */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 text-sm px-1">
-          {statusIcon(status.collections)}
-          <span className="font-mono text-gray-600">saved_collections.json</span>
-          {status.collectionsSize && (
-            <span className="text-gray-400 ml-auto text-xs">{status.collectionsSize}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 text-sm px-1">
-          {statusIcon(status.posts)}
-          <span className="font-mono text-gray-600">saved_posts.json</span>
-          {status.postsSize && (
-            <span className="text-gray-400 ml-auto text-xs">{status.postsSize}</span>
-          )}
-          <span className="text-xs text-gray-400">(選填)</span>
-        </div>
-      </div>
-
-      {status.error && (
-        <p className="text-sm text-red-500 px-1">{status.error}</p>
+      {/* 錯誤提示 */}
+      {errorMsg && (
+        <p className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+          <span>⚠️</span> {errorMsg}
+        </p>
       )}
     </div>
   );
 }
-

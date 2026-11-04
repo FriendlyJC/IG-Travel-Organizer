@@ -30,6 +30,7 @@ export interface SpotResult {
   city: string;
   spotName: string;
   spotNameEn: string;
+  searchKeywords?: string[]; // 2~3 組候選搜尋名稱 (提高搜尋成功率)
   description: string;
   confidence: 'high' | 'medium' | 'low';
   reason: string;
@@ -59,6 +60,7 @@ export interface LLMPostResult {
   city?: string;
   spot_name?: string;
   spot_name_en?: string;
+  search_keywords?: string[];
   latitude?: number;
   longitude?: number;
   description?: string;

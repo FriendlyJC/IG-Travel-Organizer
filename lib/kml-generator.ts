@@ -86,7 +86,7 @@ function placemarkKml(spot: MergedSpot): string {
 
   const sourceBadge =
     spot.coordSource === 'google'
-      ? '🟢 座標來源：Google Geocoding (精確定位)'
+      ? '🟢 座標來源：Google Maps 搜尋導向定位 (精準)'
       : spot.coordSource === 'nominatim'
       ? '🟡 座標來源：OpenStreetMap Nominatim'
       : '🔴 座標來源：AI 預估位置 (可能存在偏移)';

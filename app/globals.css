@@ -11,5 +11,40 @@ body {
   color: var(--foreground);
   background: var(--background);
   font-family: system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
 }
 
+/* 可愛木質布告欄滾動條 */
+.board-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.board-scrollbar::-webkit-scrollbar-track {
+  background: rgba(245, 235, 220, 0.6);
+  border-radius: 9999px;
+  margin: 6px 0;
+}
+
+.board-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(180, 130, 80, 0.45);
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+.board-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 110, 60, 0.7);
+}
+
+/* 霓虹字體微光動畫 */
+@keyframes neon-glow {
+  0%, 100% {
+    text-shadow: 0 0 4px #fef08a, 0 0 10px #fbbf24, 0 0 20px #f59e0b, 0 0 40px #ec4899;
+  }
+  50% {
+    text-shadow: 0 0 2px #fef08a, 0 0 6px #fbbf24, 0 0 12px #f59e0b, 0 0 24px #ec4899;
+  }
+}
+
+.neon-text-glow {
+  animation: neon-glow 3s ease-in-out infinite;
+}

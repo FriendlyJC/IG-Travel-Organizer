@@ -10,23 +10,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '無效的請求內容' }, { status: 400 });
   }
 
-  const { provider, apiKey, prompt, model, address } = body as {
-    provider: 'gemini' | 'openai' | 'google-geocode';
-    apiKey: string;
+  const { provider, apiKey, prompt, model, query } = body as {
+    provider: 'gemini' | 'openai' | 'google-maps-search';
+    apiKey?: string;
     prompt?: string;
     model?: string;
-    address?: string;
+    query?: string;
   };
 
-  if (!provider || !apiKey) {
-    return NextResponse.json({ error: '缺少必要參數' }, { status: 400 });
+  if (!provider) {
+    return NextResponse.json({ error: '缺少 provider 參數' }, { status: 400 });
   }
 
   try {
-    if (provider === 'google-geocode') {
-      if (!address) return NextResponse.json({ error: '缺少 address 參數' }, { status: 400 });
-      return await callGoogleGeocode(apiKey, address);
-    } else if (provider === 'gemini') {
+    if (provider === 'google-maps-search') {
+      if (!query) return NextResponse.json({ error: '缺少 query 參數' }, { status: 400 });
+      return await callGoogleMapsSearch(query);
+    }
+
+    if (!apiKey) {
+      return NextResponse.json({ error: '缺少 apiKey 參數' }, { status: 400 });
+    }
+
+    if (provider === 'gemini') {
       if (!prompt) return NextResponse.json({ error: '缺少 prompt 參數' }, { status: 400 });
       return await callGemini(apiKey, prompt, model);
     } else if (provider === 'openai') {
@@ -41,37 +47,38 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function callGoogleGeocode(apiKey: string, address: string) {
-  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+/** 透過 Google Maps 搜尋 URL Fetch 取得景點真實座標 (免 API Key) */
+async function callGoogleMapsSearch(query: string) {
+  const url = `https://www.google.com/search?tbm=map&q=${encodeURIComponent(query)}`;
   try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      return NextResponse.json({ error: `Google Geocoding HTTP 錯誤: ${res.statusText}` }, { status: res.status });
-    }
-    const data = await res.json();
-    console.log(`[Google Geocode] 查詢: "${address}" -> 狀態: ${data.status} ${data.error_message ? `(原因: ${data.error_message})` : ''}`);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
 
-    if (data.status === 'OK' && Array.isArray(data.results) && data.results.length > 0) {
-      const loc = data.results[0].geometry?.location;
-      if (loc && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
-        return NextResponse.json({
-          found: true,
-          lat: loc.lat,
-          lng: loc.lng,
-          formattedAddress: data.results[0].formatted_address,
-          status: 'OK',
-        });
+    if (!res.ok) {
+      return NextResponse.json({ found: false, error: `HTTP ${res.status}` });
+    }
+
+    const text = await res.text();
+    // Google Maps tbm=map 回傳結構：)]}' 後接巢狀陣列，其中包含 [距離/縮放, 經度, 緯度]
+    const raw = text.replace(/^\)\]\}'/, '').trim();
+    const match = raw.match(/\[\s*\d+(\.\d+)?\s*,\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)\s*\]/);
+
+    if (match) {
+      const lng = parseFloat(match[2]);
+      const lat = parseFloat(match[3]);
+      if (!isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+        return NextResponse.json({ found: true, lat, lng });
       }
     }
 
-    return NextResponse.json({
-      found: false,
-      status: data.status,
-      errorMessage: data.error_message || (data.status === 'ZERO_RESULTS' ? '查無結果' : data.status),
-    });
+    return NextResponse.json({ found: false });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: `連線失敗: ${msg}` }, { status: 500 });
+    return NextResponse.json({ found: false, error: msg });
   }
 }
 

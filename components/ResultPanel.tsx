@@ -75,8 +75,8 @@ export default function ResultPanel({
             <div className="font-bold text-green-700 flex items-center gap-1">
               <span>🟢 綠色圖釘</span>
             </div>
-            <p className="text-green-800 text-[11px] mt-1 font-medium">Google Geocoding</p>
-            <p className="text-green-600 text-[11px] mt-0.5">精確定位：{sourceStats['google'] || 0} 個</p>
+            <p className="text-green-800 text-[11px] mt-1 font-medium">Google Maps 搜尋</p>
+            <p className="text-green-600 text-[11px] mt-0.5">導向定位：{sourceStats['google'] || 0} 個</p>
           </div>
 
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5">

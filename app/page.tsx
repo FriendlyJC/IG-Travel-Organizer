@@ -1,28 +1,33 @@
 'use client';
 
 // ============================================================
-// app/page.tsx — 主頁面（單頁式工作流）
+// app/page.tsx — 主頁面（三大步驟、問號卷軸教學彈窗、可愛旅遊風）
 // ============================================================
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import ApiKeyInput from '@/components/ApiKeyInput';
 import FileUploader from '@/components/FileUploader';
 import CollectionPicker from '@/components/CollectionPicker';
 import ProgressPanel from '@/components/ProgressPanel';
 import ResultPanel from '@/components/ResultPanel';
 import NotFoundTable from '@/components/NotFoundTable';
+import WeatherControls, { WeatherType } from '@/components/WeatherControls';
+import CampfireAnimation from '@/components/CampfireAnimation';
+import WeatherParticles from '@/components/WeatherParticles';
+import NeonSparksEffect from '@/components/NeonSparksEffect';
+import TutorialModal, { TutorialType } from '@/components/TutorialModal';
 
 import { parseCollections, findCollectionByName } from '@/lib/parser';
 import { classifyPosts } from '@/lib/classifier';
 import { geocodeSpots } from '@/lib/geocoder';
 import { mergeSpots, generateKml, downloadKml } from '@/lib/kml-generator';
 import { generateNotFoundCsv, downloadCsv, extractNoCoordSpots } from '@/lib/not-found-generator';
+import { soundManager } from '@/lib/sound';
 
 import {
   LLMProvider,
   IGCollection,
   AnalysisProgress,
-  SpotResult,
   NotFoundResult,
   MergedSpot,
 } from '@/lib/types';
@@ -41,10 +46,16 @@ const initialProgress: AnalysisProgress = {
 // ─── 主元件 ───────────────────────────────────────────────────
 
 export default function Home() {
-  // 設定
+  // 天氣切換 (預設晴天白天)
+  const [weather, setWeather] = useState<WeatherType>('day');
+
+  // 教學卷軸彈窗狀態
+  const [activeTutorial, setActiveTutorial] = useState<TutorialType | null>(null);
+
+  // 設定 (預設 Gemini)
   const [provider, setProvider] = useState<LLMProvider>('gemini');
   const [apiKey, setApiKey] = useState('');
-  const [googleApiKey, setGoogleApiKey] = useState('');
+  const [deepSearch, setDeepSearch] = useState(false);
 
   // 檔案 & 解析
   const [collectionsJson, setCollectionsJson] = useState<string | null>(null);
@@ -59,17 +70,23 @@ export default function Home() {
   const [mergedSpots, setMergedSpots] = useState<MergedSpot[]>([]);
   const [notFound, setNotFound] = useState<NotFoundResult[]>([]);
 
+  // ── 天氣切換時播放對應背景音樂 ──────────────────────────────
+  useEffect(() => {
+    soundManager.setWeatherBgm(weather);
+  }, [weather]);
+
   // ── 檔案上傳 ────────────────────────────────────────────────
   const handleFilesLoaded = useCallback(
     (files: { collectionsJson: string | null; postsJson: string | null }) => {
       if (!files.collectionsJson) return;
       setCollectionsJson(files.collectionsJson);
 
-      // 解析 collections
       try {
         const parsed = parseCollections(files.collectionsJson);
         setCollections(parsed);
-        // 重置狀態
+        if (parsed.length > 0) {
+          setSelectedCollection(parsed[0].name);
+        }
         setProgress(initialProgress);
         setMergedSpots([]);
         setNotFound([]);
@@ -81,10 +98,9 @@ export default function Home() {
   );
 
   // ── API Key 變更 ─────────────────────────────────────────────
-  const handleApiKeyChange = (p: LLMProvider, k: string, gk: string) => {
+  const handleApiKeyChange = (p: LLMProvider, k: string) => {
     setProvider(p);
     setApiKey(k);
-    setGoogleApiKey(gk);
   };
 
   // ── 驗證是否可以開始 ─────────────────────────────────────────
@@ -104,7 +120,7 @@ export default function Home() {
       return;
     }
     if (!apiKey.trim()) {
-      alert('請先輸入 API Key');
+      alert('請先輸入 Gemini API Key');
       return;
     }
 
@@ -118,7 +134,6 @@ export default function Home() {
     setMergedSpots([]);
     setNotFound([]);
 
-    // 初始化進度
     setProgress({
       stage: 'classifying',
       totalPosts: posts.length,
@@ -129,7 +144,6 @@ export default function Home() {
     });
 
     try {
-      // ── Phase 1: LLM 分類 ─────────────────────────────────
       let classified = 0;
       let found = 0;
       let nf = 0;
@@ -156,7 +170,6 @@ export default function Home() {
         },
       });
 
-      // ── Phase 2: Geocoding ────────────────────────────────
       setProgress((prev) => ({
         ...prev,
         stage: 'geocoding',
@@ -165,17 +178,15 @@ export default function Home() {
 
       let geocoded = 0;
       const geocodedSpots = await geocodeSpots(rawSpots, {
-        googleApiKey,
+        deepSearch,
         onProgress: (done, total) => {
           geocoded = done;
           setProgress((prev) => ({ ...prev, geocodedCount: done }));
         },
       });
 
-      // ── Phase 3: 生成 KML ─────────────────────────────────
       setProgress((prev) => ({ ...prev, stage: 'generating' }));
 
-      // 合併：找不到座標的景點也加入 notFound
       const noCoordItems = extractNoCoordSpots(geocodedSpots);
       const allNotFound = [...rawNotFound, ...noCoordItems];
 
@@ -214,128 +225,286 @@ export default function Home() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 py-10 px-4">
-      <div className="max-w-xl mx-auto space-y-6">
+    <main className="relative min-h-screen w-full overflow-hidden flex items-center justify-center select-none bg-stone-900">
+      
+      {/* 1. 底層全螢幕背景圖：Edge-to-Edge 鋪滿螢幕 */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`/ui_asset/${weather}/bg_${weather}.png`}
+        alt="Weather Background"
+        className="fixed inset-0 w-full h-full object-cover transition-opacity duration-700 pointer-events-none select-none z-0"
+      />
 
-        {/* Header */}
-        <div className="text-center space-y-1">
-          <h1 className="text-2xl font-bold text-slate-800">🗺️ IG Travel Organizer</h1>
-          <p className="text-sm text-slate-500">
-            將 Instagram 旅遊收藏自動整理成 Google Earth KML 地圖
-          </p>
+      {/* 2. 天氣微調色氛圍 */}
+      <div
+        className={`fixed inset-0 pointer-events-none transition-colors duration-700 z-1 ${
+          weather === 'night'
+            ? 'bg-indigo-950/20'
+            : weather === 'autumn'
+            ? 'bg-amber-950/10'
+            : weather === 'winter'
+            ? 'bg-sky-950/10'
+            : 'bg-transparent'
+        }`}
+      />
+
+      {/* 3. 環境氛圍粒子 */}
+      <WeatherParticles weather={weather} />
+
+      {/* 4. 核心舞台：以原圖 1536x858 比例為基準，全螢幕自適應垂直居中 */}
+      <div className="relative w-full h-screen max-w-[1920px] aspect-[1536/858] flex items-center justify-center z-10">
+
+        {/* (A) 動態景物：湖畔營火 Lottie 動畫 */}
+        <CampfireAnimation weather={weather} />
+
+        {/* 布告欄整體群組 (放大 30%，以頂部霓虹燈為錨點 origin-[50%_4%] scale-[1.30]，確保霓虹燈絕不超出畫面頂部) */}
+        <div className="absolute inset-0 w-full h-full pointer-events-none z-20 origin-[50%_4%] scale-[1.30]">
+          {/* (B) 原版去背布告欄 PNG */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/ui_asset/billboard_frame.png"
+            alt="IG Travel Organizer 原版插畫布告欄"
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none z-20"
+          />
+
+          {/* (C) 霓虹燈桃紅色微閃遮罩與火花特效 */}
+          <div
+            className="absolute z-40 pointer-events-none"
+            style={{
+              left: '32.55%',
+              top: '4.08%',
+              width: '34.77%',
+              height: '16.78%',
+            }}
+          >
+            <NeonSparksEffect />
+          </div>
+
+          {/* (D) 霓虹燈下方文字覆蓋修正標籤 (解決 AI 去背字體瑕疵，角度微傾 -1.15deg) */}
+          <div
+            className="absolute z-35 flex items-center justify-center pointer-events-none select-none"
+            style={{
+              left: '35.0%',
+              top: '13.5%',
+              width: '29.8%',
+              height: '3.0%',
+              transform: 'rotate(-1.15deg)',
+            }}
+          >
+            <div className="w-full h-full bg-[#3d4f58] rounded-md flex items-center justify-center px-2 py-0.5 shadow-sm">
+              <span className="text-[10px] sm:text-[11.5px] font-semibold text-[#f1f5f9] tracking-wide whitespace-nowrap drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+                將 Instagram 旅遊收藏自動整理成 Google Earth KML 檔案
+              </span>
+            </div>
+          </div>
+
+          {/* (E) 布告欄白板功能區 (嚴格鎖定於白板內部，啟用指針事件) */}
+          <div
+            className="absolute z-30 flex flex-col pointer-events-auto"
+            style={{
+              left: '36.8%',
+              width: '26.4%',
+              top: '26.2%',
+              height: '50.8%',
+            }}
+          >
+            {/* 白板卡片滾動區：大字體、可愛旅遊風、圖文友善 */}
+            <div className="w-full h-full overflow-y-auto board-scrollbar p-1.5 sm:p-2 space-y-2.5">
+              
+              {/* Step 1: 設定 AI 金鑰 */}
+              <div className="bg-white/95 rounded-2xl border-2 border-stone-200 shadow-sm p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center shadow-xs">
+                    1
+                  </span>
+                  <h2 className="font-bold text-stone-800 text-xs sm:text-sm flex items-center gap-1.5">
+                    <span>🔑</span>
+                    <span>設定 AI 金鑰</span>
+                  </h2>
+                  {/* 圓形藍底黑框白色問號教學按鈕 */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTutorial('api')}
+                    title="查看取得 API 金鑰教學"
+                    className="w-5 h-5 rounded-full bg-blue-500 border-2 border-black text-white text-[11px] font-black flex items-center justify-center hover:scale-115 active:scale-95 shadow-xs cursor-pointer ml-auto transition-transform"
+                  >
+                    ?
+                  </button>
+                </div>
+                <ApiKeyInput
+                  provider={provider}
+                  apiKey={apiKey}
+                  onChange={handleApiKeyChange}
+                />
+              </div>
+
+              {/* Step 2: 上傳 IG 旅遊收藏清單 */}
+              <div className="bg-white/95 rounded-2xl border-2 border-stone-200 shadow-sm p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center shadow-xs">
+                    2
+                  </span>
+                  <h2 className="font-bold text-stone-800 text-xs sm:text-sm flex items-center gap-1.5">
+                    <span>📂</span>
+                    <span>上傳 IG 旅遊收藏清單</span>
+                  </h2>
+                  {/* 圓形藍底黑框白色問號教學按鈕 */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTutorial('json')}
+                    title="查看匯出 Instagram JSON 檔案步驟教學"
+                    className="w-5 h-5 rounded-full bg-blue-500 border-2 border-black text-white text-[11px] font-black flex items-center justify-center hover:scale-115 active:scale-95 shadow-xs cursor-pointer ml-auto transition-transform"
+                  >
+                    ?
+                  </button>
+                </div>
+                <FileUploader onFilesLoaded={handleFilesLoaded} />
+              </div>
+
+              {/* Step 2 載入收藏夾後的分析工作流 (移動至第二步與第三步之間) */}
+              {collections.length > 0 && (
+                <div className="bg-white/95 rounded-2xl border-2 border-stone-200 shadow-sm p-3 space-y-2.5 animate-fadeIn">
+                  <h3 className="font-bold text-stone-800 text-xs sm:text-sm flex items-center gap-1.5">
+                    <span>🗺️</span>
+                    <span>選擇要整理的收藏夾</span>
+                  </h3>
+                  <CollectionPicker
+                    collections={collections}
+                    selectedName={selectedCollection}
+                    onChange={setSelectedCollection}
+                  />
+
+                  {/* 開始按鈕 & 深度搜尋選項 */}
+                  <div className="space-y-2.5 pt-1">
+                    <button
+                      onClick={handleStart}
+                      disabled={!canStart}
+                      className={`w-full py-2.5 px-4 rounded-xl font-black text-xs sm:text-sm transition-all select-none flex items-center justify-center gap-2 ${
+                        canStart
+                          ? 'bg-amber-500 hover:bg-amber-600 active:translate-y-0.5 text-white shadow-[0_4px_0_#b45309,0_8px_16px_rgba(180,83,9,0.3)] active:shadow-[0_1px_0_#b45309]'
+                          : 'bg-stone-200 text-stone-400 border border-stone-300 cursor-not-allowed'
+                      }`}
+                    >
+                      {isRunning ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          AI 正在分析景點經緯度...
+                        </span>
+                      ) : (
+                        '🚀 開始整理旅遊地圖'
+                      )}
+                    </button>
+
+                    {/* 深度搜尋選項 (清晰放大排版) */}
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none bg-amber-50/95 border-2 border-amber-300 rounded-xl p-2.5 hover:bg-amber-100/80 transition-colors shadow-xs">
+                      <input
+                        type="checkbox"
+                        checked={deepSearch}
+                        onChange={(e) => setDeepSearch(e.target.checked)}
+                        disabled={isRunning}
+                        className="w-4 h-4 mt-0.5 text-amber-600 rounded border-stone-400 focus:ring-amber-500 cursor-pointer accent-amber-600"
+                      />
+                      <div className="leading-snug">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-black text-stone-900 text-xs sm:text-sm">開啟深度搜尋模式</span>
+                          <span className="text-amber-900 font-bold bg-amber-200 px-1.5 py-0.5 rounded text-[10px] sm:text-[11px] border border-amber-300">
+                            ★ 大幅提高座標精準度
+                          </span>
+                        </div>
+                        <p className="text-stone-600 text-[11px] sm:text-xs mt-1 leading-normal">
+                          針對同景點多關鍵字交叉驗證 Google Maps 與 Nominatim，有效降低偏差！
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* 進度面板 */}
+              {progress.stage !== 'idle' && (
+                <ProgressPanel progress={progress} />
+              )}
+
+              {/* 結果面板 */}
+              {progress.stage === 'done' && mergedSpots.length > 0 && (
+                <ResultPanel
+                  mergedSpots={mergedSpots}
+                  notFound={notFound}
+                  collectionName={selectedCollection}
+                  onDownloadKml={handleDownloadKml}
+                  onDownloadCsv={handleDownloadCsv}
+                />
+              )}
+
+              {/* 找不到清單預覽 */}
+              {progress.stage === 'done' && notFound.length > 0 && (
+                <NotFoundTable items={notFound} />
+              )}
+
+              {/* Step 3: 匯入 Google Earth 即可完成 */}
+              <div className="bg-white/95 rounded-2xl border-2 border-stone-200 shadow-sm p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500 text-white text-[11px] font-black flex items-center justify-center shadow-xs">
+                    3
+                  </span>
+                  <h2 className="font-bold text-stone-800 text-xs sm:text-sm flex items-center gap-1.5 leading-tight">
+                    <span>🌍</span>
+                    <span>將 KML 檔案匯入 Google Earth 即可完成</span>
+                  </h2>
+                  {/* 圓形藍底黑框白色問號教學按鈕 */}
+                  <button
+                    type="button"
+                    onClick={() => setActiveTutorial('earth')}
+                    title="查看匯入 Google Earth 教學"
+                    className="w-5 h-5 rounded-full bg-blue-500 border-2 border-black text-white text-[11px] font-black flex items-center justify-center hover:scale-115 active:scale-95 shadow-xs cursor-pointer ml-auto transition-transform flex-shrink-0"
+                  >
+                    ?
+                  </button>
+                </div>
+
+                {/* 地球 Icon + 開啟超連結 */}
+                <div className="pt-0.5 space-y-1.5">
+                  <a
+                    href="https://earth.google.com/web/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:translate-y-0.5 text-white font-bold text-xs sm:text-sm shadow-md transition-all select-none"
+                  >
+                    <span className="text-base">🌍</span>
+                    <span>點擊開啟 Google Earth 網頁版 ↗</span>
+                  </a>
+                  <p className="text-[11px] text-stone-500 text-center">
+                    整理出的 KML 可直接匯入專案，在 3D 地球上看見所有旅遊景點！
+                  </p>
+                </div>
+              </div>
+
+              {/* 隱私說明小卡 */}
+              <div className="text-center text-[10px] sm:text-xs text-stone-500 pt-1 pb-1 space-y-0.5 bg-white/70 rounded-xl p-2.5 border border-stone-200/60 shadow-xs">
+                <p className="font-bold text-stone-700 flex items-center justify-center gap-1">
+                  <span>🛡️</span>
+                  <span>隱私安全保證</span>
+                </p>
+                <p className="text-[10px] sm:text-[11px] leading-relaxed">
+                  所有貼文與 API Key 僅於你的瀏覽器端本機運作，絕不儲存或傳輸至第三方伺服器，請放心使用。
+                </p>
+              </div>
+
+            </div>
+          </div>
         </div>
 
-        {/* Step 1: API Key */}
-        <Section step="1" title="設定 API 金鑰">
-          <ApiKeyInput
-            provider={provider}
-            apiKey={apiKey}
-            googleApiKey={googleApiKey}
-            onChange={handleApiKeyChange}
-          />
-        </Section>
-
-        {/* Step 2: 上傳 JSON */}
-        <Section step="2" title="上傳 IG 匯出資料">
-          <FileUploader onFilesLoaded={handleFilesLoaded} />
-          <p className="text-xs text-gray-400 mt-2">
-            📂 請上傳 Meta 資料下載中 <code className="bg-gray-100 px-1 rounded">saved/</code> 資料夾內的 JSON 檔案
-          </p>
-        </Section>
-
-        {/* Step 3: 選擇 Collection */}
-        {collections.length > 0 && (
-          <Section step="3" title="選擇收藏夾">
-            <CollectionPicker
-              collections={collections}
-              selectedName={selectedCollection}
-              onChange={setSelectedCollection}
-            />
-          </Section>
-        )}
-
-        {/* 開始按鈕 */}
-        {collections.length > 0 && (
-          <button
-            onClick={handleStart}
-            disabled={!canStart}
-            className={`w-full py-3.5 rounded-xl font-semibold text-base transition-all ${
-              canStart
-                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg active:scale-95'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            }`}
-          >
-            {isRunning ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                分析中...
-              </span>
-            ) : '🚀 開始分析'}
-          </button>
-        )}
-
-        {/* 進度面板 */}
-        {progress.stage !== 'idle' && (
-          <ProgressPanel progress={progress} />
-        )}
-
-        {/* 結果面板 */}
-        {progress.stage === 'done' && mergedSpots.length > 0 && (
-          <ResultPanel
-            mergedSpots={mergedSpots}
-            notFound={notFound}
-            collectionName={selectedCollection}
-            onDownloadKml={handleDownloadKml}
-            onDownloadCsv={handleDownloadCsv}
-          />
-        )}
-
-        {/* 找不到清單預覽 */}
-        {progress.stage === 'done' && notFound.length > 0 && (
-          <NotFoundTable items={notFound} />
-        )}
-
-        {/* Footer */}
-        <footer className="text-center text-xs text-gray-400 pt-4 space-y-1">
-          <p>🔒 所有資料僅在瀏覽器處理，不儲存於伺服器</p>
-          <p>
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-gray-600 underline"
-            >
-              GitHub
-            </a>
-            {' · '}
-            MIT License
-          </p>
-        </footer>
       </div>
+
+      {/* 5. 右上角：可愛天氣切換控制器與音樂開關 */}
+      <WeatherControls currentWeather={weather} onChange={setWeather} />
+
+      {/* 6. 羊皮紙卷軸風格操作教學彈窗 */}
+      <TutorialModal
+        type={activeTutorial}
+        onClose={() => setActiveTutorial(null)}
+      />
+
     </main>
   );
 }
-
-// ─── Section 包裝元件 ──────────────────────────────────────────
-function Section({
-  step,
-  title,
-  children,
-}: {
-  step: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-      <div className="flex items-center gap-3">
-        <span className="w-7 h-7 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">
-          {step}
-        </span>
-        <h2 className="font-semibold text-gray-800">{title}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}
-

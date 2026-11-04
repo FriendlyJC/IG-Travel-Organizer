@@ -38,6 +38,7 @@ Hashtags: ${hashtags}
   "city": "<城市英文名，例如 Da Lat>",
   "spot_name": "<當地語言的景點/店家名稱>",
   "spot_name_en": "<景點英文名稱>",
+  "search_keywords": ["<最精確官方名稱，例如 卓也小屋渡假園區>", "<核心常用名稱，例如 卓也小屋>", "<別名/簡稱/英文名，例如 卓也小屋民宿>"],
   "latitude": <景點或城市的大致緯度浮點數，例如 11.9404>,
   "longitude": <景點或城市的大致經度浮點數，例如 108.4583>,
   "description": "<50字以內的景點簡述>",
@@ -209,6 +210,10 @@ export async function classifyPosts(
         const lngNum = typeof result.longitude === 'number' ? result.longitude : parseFloat(String(result.longitude));
         const validCoords = !isNaN(latNum) && !isNaN(lngNum) && latNum >= -90 && latNum <= 90 && lngNum >= -180 && lngNum <= 180;
 
+        const keywords = Array.isArray(result.search_keywords) && result.search_keywords.length > 0
+          ? result.search_keywords
+          : [result.spot_name, result.spot_name_en].filter(Boolean) as string[];
+
         spots.push({
           postIndex,
           post,
@@ -216,6 +221,7 @@ export async function classifyPosts(
           city: result.city ?? '',
           spotName: result.spot_name ?? '',
           spotNameEn: result.spot_name_en ?? '',
+          searchKeywords: keywords,
           description: result.description ?? '',
           confidence: result.confidence ?? 'low',
           reason: result.reason,
