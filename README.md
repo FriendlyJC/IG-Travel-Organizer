@@ -2,7 +2,7 @@
 
 > 將 Instagram 旅遊收藏自動整理至 Google Earth 地圖
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/ig-travel-organizer)
+無須登入即可使用：https://ig-travel-organizer.vercel.app/
 
 ## 📖 功能介紹
 
